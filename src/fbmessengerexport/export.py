@@ -11,7 +11,7 @@ from typing import List, Iterator, Union, TypeVar, Optional, Tuple
 import dataset # type: ignore
 
 import fbchat # type: ignore
-### see https://github.com/fbchat-dev/fbchat/issues/615#issuecomment-710127001 
+### see https://github.com/fbchat-dev/fbchat/issues/615#issuecomment-710127001
 import re
 fbchat._util.USER_AGENTS    = ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"]
 fbchat._state.FB_DTSG_REGEX = re.compile(r'"name":"fb_dtsg","value":"(.*?)"')
@@ -43,7 +43,7 @@ class ExportDb:
     def insert_thread(self, thread: Thread) -> None:
         dd = vars(thread)
         delk(dd, 'type') # user vs group? fine without it for now
-      
+
         col = 'color'
         c = dd[col]
         if c is not None:
@@ -57,7 +57,7 @@ class ExportDb:
 
         lts = 'last_message_timestamp'
         dd[lts] = int(dd[lts]) # makes more sense for queries?
-    
+
         delk(dd, 'plan') # it's unclear, why is this baked into the plan? and what if the plan changes?
 
         self.ttable.upsert(OrderedDict(sorted(dd.items())), ['uid'])
@@ -82,6 +82,7 @@ class ExportDb:
         dd[ts] = int(dd[ts]) # makes more sense for queries?
 
         dd['thread_id'] = thread.uid
+        dd['name'] = thread.name
 
         self.mtable.upsert(OrderedDict(sorted(dd.items())), ['uid'])
 
@@ -162,7 +163,7 @@ def iter_thread(client: Client, thread: Thread, before: Optional[int]=None) -> I
             # could happen if there is some internal fbchat error. Not much we can do so we just bail.
             yield e
             break
-            
+
         if len(chunk) == 0:
             # not sure if can actually happen??
             yield RuntimeError("Expected non-empty chunk")
@@ -188,9 +189,9 @@ def iter_thread(client: Client, thread: Thread, before: Optional[int]=None) -> I
 def process_all(client: Client, db: ExportDb) -> Iterator[Exception]:
 
     locs = [
-        ThreadLocation.ARCHIVED, # not sure what that means.. apparently groups you don't have access to anymore?
+        #ThreadLocation.ARCHIVED, # not sure what that means.. apparently groups you don't have access to anymore?
         ThreadLocation.INBOX,    # most of messages are here.
-        ThreadLocation.OTHER,    # apparently, keeps hidden conversations? Although doesn't returl all of them for me...
+        #ThreadLocation.OTHER,    # apparently, keeps hidden conversations? Although doesn't returl all of them for me...
         # ThreadLocation.PENDING, # what is it???
     ]
     threads: List[Thread] = []
@@ -198,6 +199,26 @@ def process_all(client: Client, db: ExportDb) -> Iterator[Exception]:
         logger.debug('fetching threads: %s', loc)
         # fetches all threads by default
         thr = client.fetchThreads(loc)
+
+        # Depends on python3 and dmenu.
+        thr_names = (list(map(lambda x: x.name, thr)))
+        command = 'echo -e \"' \
+                + '\\n' \
+                + '\\n'.join([str(elem) for elem in thr_names]) \
+                + '\" | ' \
+                + 'dmenu -i -p \"select or space to break loop\"'
+        import subprocess
+        selected_names = []
+        while True:
+            selected = (subprocess.check_output(command, shell=True, text=True)).strip("\n")
+            if selected != "":
+                selected_names.append(selected)
+            else: break
+        print("selected_names : ", selected_names)
+        filtered = [ x for x in thr if (x.name in selected_names) ]
+        thr = filtered
+        input("Press Enter to continue the whole process.")
+
         threads.extend(thr)
 
     for thread in threads:
@@ -257,7 +278,7 @@ def run(*, cookies: str, db: Path):
         session_cookies=json.loads(cookies),
     )
     patch_marketplace(client=client)
-    
+
 
     edb = ExportDb(db)
 
@@ -294,7 +315,7 @@ Export your personal Facebook chat/Messenger data into an sqlite database.
 Main difference from "Download your information" export is that this tool can be run automatically and doesn't require remembering to go onto Facebook website, reentering password, downloading archive, etc.
 
 Note that at the moment it exports *text only*, images or videos are not exported.
-I recommend checking the database after initial export to make sure it contains everything you want from the tool! 
+I recommend checking the database after initial export to make sure it contains everything you want from the tool!
 I cleaned up some things I assumed weren't useful from raw responses, but I could be misinterpreting something as I'm not a heavy Facebook user.
 Feel free to open a github issue if you think something about storage should be changed.
 '''.strip())
